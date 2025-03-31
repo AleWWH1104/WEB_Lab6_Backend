@@ -26,8 +26,8 @@ var (
 	mutex  sync.Mutex
 )
 
+// Crea una nueva serie y la almacena en memoria
 func createSerie(w http.ResponseWriter, r *http.Request) {
-	// Configurar cabeceras CORS
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 
@@ -47,6 +47,16 @@ func createSerie(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newSerie)
 }
 
+// Obtiene todas las series almacenadas
+func getAllSeries(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	mutex.Lock()
+	json.NewEncoder(w).Encode(series)
+	mutex.Unlock()
+}
+
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -64,7 +74,10 @@ func enableCORS(next http.Handler) http.Handler {
 
 func main() {
 	router := mux.NewRouter()
+
+	// Definir rutas
 	router.HandleFunc("/api/series", createSerie).Methods("POST")
+	router.HandleFunc("/api/series", getAllSeries).Methods("GET")
 
 	// Middleware para habilitar CORS
 	handler := enableCORS(router)
