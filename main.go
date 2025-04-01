@@ -138,10 +138,110 @@ func updateSerie(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Serie not found", http.StatusNotFound)
 }
 
+// Actualiza el estado de una serie
+func updateStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	var requestBody struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	for i, serie := range series {
+		if serie.ID == id {
+			series[i].Status = requestBody.Status
+			json.NewEncoder(w).Encode(series[i])
+			return
+		}
+	}
+
+	http.Error(w, "Serie not found", http.StatusNotFound)
+}
+
+func incrementEpisode(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	for i, serie := range series {
+		if serie.ID == id {
+			series[i].LastEpisodeWatched++
+			json.NewEncoder(w).Encode(series[i])
+			return
+		}
+	}
+
+	http.Error(w, "Serie not found", http.StatusNotFound)
+}
+
+func upvoteSerie(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	for i, serie := range series {
+		if serie.ID == id {
+			series[i].Ranking++
+			json.NewEncoder(w).Encode(series[i])
+			return
+		}
+	}
+
+	http.Error(w, "Serie not found", http.StatusNotFound)
+}
+
+func downvoteSerie(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	id, err := strconv.Atoi(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	for i, serie := range series {
+		if serie.ID == id {
+			series[i].Ranking--
+			json.NewEncoder(w).Encode(series[i])
+			return
+		}
+	}
+
+	http.Error(w, "Serie not found", http.StatusNotFound)
+}
+
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
+		w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE,PATCH")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 
 		if r.Method == "OPTIONS" {
@@ -156,12 +256,18 @@ func enableCORS(next http.Handler) http.Handler {
 func main() {
 	router := mux.NewRouter()
 
-	// Definir rutas
+	// Definiendo rutas
 	router.HandleFunc("/api/series", createSerie).Methods("POST")
 	router.HandleFunc("/api/series", getAllSeries).Methods("GET")
 	router.HandleFunc("/api/series/{id}", getSerieByID).Methods("GET")
 	router.HandleFunc("/api/series/{id}", deleteSerie).Methods("DELETE")
 	router.HandleFunc("/api/series/{id}", updateSerie).Methods("PUT")
+
+	//Rutas extras
+	router.HandleFunc("/api/series/{id}/status", updateStatus).Methods("PATCH")
+	router.HandleFunc("/api/series/{id}/episode", incrementEpisode).Methods("PATCH")
+	router.HandleFunc("/api/series/{id}/upvote", upvoteSerie).Methods("PATCH")
+	router.HandleFunc("/api/series/{id}/downvote", downvoteSerie).Methods("PATCH")
 
 	// Middleware para habilitar CORS
 	handler := enableCORS(router)
