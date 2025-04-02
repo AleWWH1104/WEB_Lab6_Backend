@@ -1,35 +1,18 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
-	"sync"
 
 	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 )
 
-// Serie representa la estructura del payload recibido
-type Serie struct {
-	ID                 int    `json:"id"`
-	Title              string `json:"title"`
-	Status             string `json:"status"`
-	LastEpisodeWatched int    `json:"lastEpisodeWatched"`
-	TotalEpisodes      int    `json:"totalEpisodes"`
-	Ranking            int    `json:"ranking"`
-}
-
-var (
-	series []Serie
-	nextID = 1
-	mutex  sync.Mutex
-)
-
-// Crea una nueva serie y la almacena en memoria
 func createSerie(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 
 	var newSerie Serie
@@ -38,28 +21,42 @@ func createSerie(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mutex.Lock()
-	newSerie.ID = nextID
-	nextID++
-	series = append(series, newSerie)
-	mutex.Unlock()
+	query := `INSERT INTO series (title, status, last_episode_watched, total_episodes, ranking) 
+			VALUES ($1, $2, $3, $4, $5) RETURNING id`
+	err := db.QueryRow(query, newSerie.Title, newSerie.Status, newSerie.LastEpisodeWatched, newSerie.TotalEpisodes, newSerie.Ranking).Scan(&newSerie.ID)
+	if err != nil {
+		http.Error(w, "Error inserting data", http.StatusInternalServerError)
+		return
+	}
 
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(newSerie)
 }
 
-// Obtiene todas las series almacenadas
 func getAllSeries(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 
-	mutex.Lock()
+	rows, err := db.Query("SELECT id, title, status, last_episode_watched, total_episodes, ranking FROM series")
+	if err != nil {
+		http.Error(w, "Error fetching data", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var series []Serie
+	for rows.Next() {
+		var serie Serie
+		if err := rows.Scan(&serie.ID, &serie.Title, &serie.Status, &serie.LastEpisodeWatched, &serie.TotalEpisodes, &serie.Ranking); err != nil {
+			http.Error(w, "Error scanning data", http.StatusInternalServerError)
+			return
+		}
+		series = append(series, serie)
+	}
+
 	json.NewEncoder(w).Encode(series)
-	mutex.Unlock()
 }
 
 func getSerieByID(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
@@ -69,21 +66,21 @@ func getSerieByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	for _, serie := range series {
-		if serie.ID == id {
-			json.NewEncoder(w).Encode(serie)
-			return
-		}
+	var serie Serie
+	err = db.QueryRow("SELECT id, title, status, last_episode_watched, total_episodes, ranking FROM series WHERE id = $1", id).
+		Scan(&serie.ID, &serie.Title, &serie.Status, &serie.LastEpisodeWatched, &serie.TotalEpisodes, &serie.Ranking)
+	if err == sql.ErrNoRows {
+		http.Error(w, "Serie not found", http.StatusNotFound)
+		return
+	} else if err != nil {
+		http.Error(w, "Error fetching data", http.StatusInternalServerError)
+		return
 	}
 
-	http.Error(w, "Serie not found", http.StatusNotFound)
+	json.NewEncoder(w).Encode(serie)
 }
 
 func deleteSerie(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
@@ -93,21 +90,16 @@ func deleteSerie(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	for i, serie := range series {
-		if serie.ID == id {
-			series = append(series[:i], series[i+1:]...) // Elimina la serie
-			w.WriteHeader(http.StatusNoContent)          // 204 No Content
-			return
-		}
+	_, err = db.Exec("DELETE FROM series WHERE id = $1", id)
+	if err != nil {
+		http.Error(w, "Error deleting data", http.StatusInternalServerError)
+		return
 	}
-	http.Error(w, "Serie not found", http.StatusNotFound)
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func updateSerie(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 
 	vars := mux.Vars(r)
@@ -123,22 +115,17 @@ func updateSerie(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	for i, serie := range series {
-		if serie.ID == id {
-			updatedSerie.ID = id
-			series[i] = updatedSerie
-			json.NewEncoder(w).Encode(updatedSerie)
-			return
-		}
+	_, err = db.Exec("UPDATE series SET title = $1, status = $2, last_episode_watched = $3, total_episodes = $4, ranking = $5 WHERE id = $6",
+		updatedSerie.Title, updatedSerie.Status, updatedSerie.LastEpisodeWatched, updatedSerie.TotalEpisodes, updatedSerie.Ranking, id)
+	if err != nil {
+		http.Error(w, "Error updating data", http.StatusInternalServerError)
+		return
 	}
 
-	http.Error(w, "Serie not found", http.StatusNotFound)
+	updatedSerie.ID = id
+	json.NewEncoder(w).Encode(updatedSerie)
 }
 
-// Actualiza el estado de una serie
 func updateStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
@@ -158,18 +145,15 @@ func updateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	for i, serie := range series {
-		if serie.ID == id {
-			series[i].Status = requestBody.Status
-			json.NewEncoder(w).Encode(series[i])
-			return
-		}
+	query := "UPDATE series SET status = $1 WHERE id = $2 RETURNING *"
+	row := db.QueryRow(query, requestBody.Status, id)
+	var serie Serie
+	if err := row.Scan(&serie.ID, &serie.Title, &serie.Status, &serie.LastEpisodeWatched, &serie.TotalEpisodes, &serie.Ranking); err != nil {
+		http.Error(w, "Serie not found", http.StatusNotFound)
+		return
 	}
 
-	http.Error(w, "Serie not found", http.StatusNotFound)
+	json.NewEncoder(w).Encode(serie)
 }
 
 func incrementEpisode(w http.ResponseWriter, r *http.Request) {
@@ -180,18 +164,15 @@ func incrementEpisode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	for i, serie := range series {
-		if serie.ID == id {
-			series[i].LastEpisodeWatched++
-			json.NewEncoder(w).Encode(series[i])
-			return
-		}
+	query := "UPDATE series SET last_episode_watched = last_episode_watched + 1 WHERE id = $1 RETURNING *"
+	row := db.QueryRow(query, id)
+	var serie Serie
+	if err := row.Scan(&serie.ID, &serie.Title, &serie.Status, &serie.LastEpisodeWatched, &serie.TotalEpisodes, &serie.Ranking); err != nil {
+		http.Error(w, "Serie not found", http.StatusNotFound)
+		return
 	}
 
-	http.Error(w, "Serie not found", http.StatusNotFound)
+	json.NewEncoder(w).Encode(serie)
 }
 
 func upvoteSerie(w http.ResponseWriter, r *http.Request) {
@@ -202,18 +183,15 @@ func upvoteSerie(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	for i, serie := range series {
-		if serie.ID == id {
-			series[i].Ranking++
-			json.NewEncoder(w).Encode(series[i])
-			return
-		}
+	query := "UPDATE series SET ranking = ranking + 1 WHERE id = $1 RETURNING *"
+	row := db.QueryRow(query, id)
+	var serie Serie
+	if err := row.Scan(&serie.ID, &serie.Title, &serie.Status, &serie.LastEpisodeWatched, &serie.TotalEpisodes, &serie.Ranking); err != nil {
+		http.Error(w, "Serie not found", http.StatusNotFound)
+		return
 	}
 
-	http.Error(w, "Serie not found", http.StatusNotFound)
+	json.NewEncoder(w).Encode(serie)
 }
 
 func downvoteSerie(w http.ResponseWriter, r *http.Request) {
@@ -224,18 +202,15 @@ func downvoteSerie(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	for i, serie := range series {
-		if serie.ID == id {
-			series[i].Ranking--
-			json.NewEncoder(w).Encode(series[i])
-			return
-		}
+	query := "UPDATE series SET ranking = ranking - 1 WHERE id = $1 RETURNING *"
+	row := db.QueryRow(query, id)
+	var serie Serie
+	if err := row.Scan(&serie.ID, &serie.Title, &serie.Status, &serie.LastEpisodeWatched, &serie.TotalEpisodes, &serie.Ranking); err != nil {
+		http.Error(w, "Serie not found", http.StatusNotFound)
+		return
 	}
 
-	http.Error(w, "Serie not found", http.StatusNotFound)
+	json.NewEncoder(w).Encode(serie)
 }
 
 func enableCORS(next http.Handler) http.Handler {
@@ -254,6 +229,11 @@ func enableCORS(next http.Handler) http.Handler {
 }
 
 func main() {
+
+	//Conexion a la base de datos
+	connectDB()
+	defer closeDB() //Se cierra
+
 	router := mux.NewRouter()
 
 	// Definiendo rutas
