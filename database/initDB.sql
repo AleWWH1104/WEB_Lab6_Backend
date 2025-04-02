@@ -1,7 +1,3 @@
-CREATE DATABASE seriesdb;
-
-\c seriesdb;
-
 CREATE TABLE IF NOT EXISTS series (
     id SERIAL PRIMARY KEY,
     title VARCHAR(100) UNIQUE NOT NULL,

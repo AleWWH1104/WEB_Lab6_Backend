@@ -1,18 +1,47 @@
-version: '3'
+version: '3.8'  
+
 services:
   db:
-    image: postgres:latest
+    image: postgres:15-alpine  
     environment:
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: seriesdb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/initDB.sql:/docker-entrypoint-initdb.d/init.sql  
+    healthcheck:  # Nuevo: Healthcheck para esperar que DB esté lista
+      test: ["CMD-SHELL", "pg_isready -U user -d seriesdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     ports:
       - "5432:5432"
+    networks:  
+      - app_network
+
   backend:
-    build: ./backend
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile  
     environment:
-      - DATABASE_URL=postgres://user:password@db:5432/seriesdb?sslmode=disable
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_USER: user
+      DB_PASSWORD: password
+      DB_NAME: seriesdb
     ports:
       - "8080:8080"
     depends_on:
-      - db
+      db:
+        condition: service_healthy  # Espera hasta que DB esté lista
+    networks:
+      - app_network
+    restart: on-failure  # Recomendado: reintentos automáticos
+
+volumes:
+  postgres_data:
+
+networks: 
+  app_network:
+    driver: bridge
