@@ -12,6 +12,7 @@ import (
 	_ "github.com/lib/pq"
 )
 
+// createSerie maneja la creación de una nueva serie.
 func createSerie(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -33,6 +34,7 @@ func createSerie(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(newSerie)
 }
 
+// getAllSeries maneja la obtención de todas las series.
 func getAllSeries(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -56,6 +58,7 @@ func getAllSeries(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(series)
 }
 
+// getSerieByID maneja la obtención de una serie específica por su ID.
 func getSerieByID(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -80,6 +83,7 @@ func getSerieByID(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(serie)
 }
 
+// deleteSerie maneja la eliminación de una serie por su ID.
 func deleteSerie(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -99,6 +103,7 @@ func deleteSerie(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// updateSerie maneja la actualización completa de una serie por su ID.
 func updateSerie(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -126,6 +131,7 @@ func updateSerie(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(updatedSerie)
 }
 
+// updateStatus maneja la actualización parcial del estado de una serie.
 func updateStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
@@ -137,6 +143,7 @@ func updateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Define expected request body structure
 	var requestBody struct {
 		Status string `json:"status"`
 	}
@@ -156,6 +163,7 @@ func updateStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(serie)
 }
 
+// incrementEpisode maneja el incremento del último episodio visto de una serie.
 func incrementEpisode(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
@@ -175,6 +183,7 @@ func incrementEpisode(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(serie)
 }
 
+// upvoteSerie maneja el incremento del ranking de una serie.
 func upvoteSerie(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
@@ -194,6 +203,7 @@ func upvoteSerie(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(serie)
 }
 
+// downvoteSerie maneja el decremento del ranking de una serie.
 func downvoteSerie(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	id, err := strconv.Atoi(vars["id"])
@@ -213,6 +223,10 @@ func downvoteSerie(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(serie)
 }
 
+
+// enableCORS es un middleware que añade las cabeceras CORS necesarias a las respuestas.
+// Permite peticiones desde cualquier origen y los métodos y cabeceras comunes.
+// También maneja las peticiones preflight OPTIONS.
 func enableCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -228,12 +242,15 @@ func enableCORS(next http.Handler) http.Handler {
 	})
 }
 
+// main es la función principal que inicia la aplicación.
+// Conecta a la base de datos, configura el enrutador, aplica middleware y arranca el servidor HTTP.
 func main() {
 
 	//Conexion a la base de datos
 	connectDB()
 	defer closeDB() //Se cierra
 
+	// Crea una nueva instancia del enrutador mux
 	router := mux.NewRouter()
 
 	// Definiendo rutas
@@ -249,9 +266,11 @@ func main() {
 	router.HandleFunc("/api/series/{id}/upvote", upvoteSerie).Methods("PATCH")
 	router.HandleFunc("/api/series/{id}/downvote", downvoteSerie).Methods("PATCH")
 
-	// Middleware para habilitar CORS
+	// Aplica el middleware CORS a todas las rutas definidas en 'router'
+	// Ensure CORS is applied before the router handles requests
 	handler := enableCORS(router)
 
+	// Inicia el servidor HTTP y registra cualquier error fatal que ocurra
 	fmt.Println("Servidor corriendo en http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", handler))
 }
